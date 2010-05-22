@@ -1,148 +1,114 @@
-PROGRAM MANDEL
-USE omp_lib
-IMPLICIT NONE
- 
-CHARACTER ( len = 255 ), PARAMETER :: filename = 'buddhabrot.ppm'
-INTEGER, PARAMETER :: file_out_unit = 10
- 
- 
-INTEGER, PARAMETER :: n_max=100
-INTEGER, PARAMETER :: grid_resolution = 512
-INTEGER, PARAMETER :: grid_center = grid_resolution/2
-INTEGER, PARAMETER :: zpower = 2
-INTEGER, PARAMETER :: miniter = 2
-INTEGER*8, PARAMETER :: batchSize = 10000000
-REAL, PARAMETER :: escapeOrbit = 2
-REAL, PARAMETER :: xmin = -1.0, xmax = 2.0, ymin = -1.3, ymax =1.3
- 
-REAL, PARAMETER :: intensityR = 2048.
-REAL, PARAMETER :: intensityG = 2048.
-REAL, PARAMETER :: intensityB = 2048.
- 
-!Track pixel exposure by color
-INTEGER :: exposureRMap(grid_resolution, grid_resolution)
-INTEGER :: exposureGMap(grid_resolution, grid_resolution)
-INTEGER :: exposureBMap(grid_resolution, grid_resolution)
- 
-INTEGER :: maxRExposure, maxGExposure, maxBExposure
-INTEGER :: minRExposure, minGExposure, minBExposure
-INTEGER :: maxExposure, minExposure
- 
-INTEGER*8 :: i
-REAL :: x,y
-COMPLEX :: z, c
-INTEGER :: iter
-INTEGER :: tempX, tempY, tempYm
- 
-INTEGER :: ppm_i
-INTEGER :: ppm_j
-INTEGER :: ppm_jhi
-INTEGER :: ppm_jlo
- 
-!initialize exposureMap to 1
-exposureRMap = 0
-exposureGMap = 0
-exposureBMap = 0
- 
-!$OMP PARALLEL DO DEFAULT(PRIVATE),SHARED(exposureRMap, exposureGMap, exposureBMap)
-DO i=1, batchSize
-  CALL RANDOM_NUMBER(x)
-  CALL RANDOM_NUMBER(y)
-  z = CMPLX(0,0)
-  !c = CMPLX(x*2.5 - 2 ,y*2.6 - 1.3) !choose a random point on complex plane 
-  c = CMPLX((x*2.5 - 2) ,y*1.3 ) !choose a random point on complex plane
-  IF (notInMSet(c, n_max)) THEN !if it espace out of the mandelbrot set
-    DO iter=1, n_max !iterate and plot orbit
-      z = z**zpower + c !mandelbrot formula : Z = Z²+C
-      IF(iter .GE. miniter) THEN
-        TempX = INT(grid_resolution * (REAL(z) + xmax) / (xmax - xmin))
-        TempY = INT(grid_resolution * (AIMAG(z) + ymax) / (ymax - ymin))
-        TempYm = INT(grid_center - (TempY - grid_resolution/2))
-        IF((TempX > 0) .AND. (TempX < grid_resolution) .AND. (TempY > 0) .AND. (TempY < grid_resolution)) THEN
-          IF((iter > 2) .AND. (iter < 50)) THEN
-            exposureRMap(TempX, TempY)  = exposureRMap(TempX, TempY) + 1
-            exposureRMap(TempX, TempYm) = exposureRMap(TempX, TempYm) + 1
-          END IF
-          IF((iter > 25) .AND. (iter < 75)) THEN
-            exposureGMap(TempX, TempY)  = exposureGMap(TempX, TempY) + 1
-            exposureGMap(TempX, TempYm) = exposureGMap(TempX, TempYm) + 1
-          END IF
-          IF((iter > 50) .AND. (iter < 100)) THEN
-            exposureBMap(TempX, TempY)  = exposureBMap(TempX, TempY) + 1
-            exposureBMap(TempX, TempYm) = exposureBMap(TempX, TempYm) + 1
-          ENDIF
-        END IF
-      END IF !(cabs(z)<4)
-    END DO
-  END IF
-END DO
-!$END PARALLEL
- 
+program buddhabrot
+    implicit none
 
+    character (len=*), parameter :: filename = 'buddhabrot.ppm'
 
-maxRExposure = MAXVAL(exposureRMap)
-!minRExposure = MINVAL(exposureRMap)
-maxGExposure = MAXVAL(exposureGMap)
-!minGExposure = MINVAL(exposureGMap)
-maxBExposure = MAXVAL(exposureBMap)
-!minBExposure = MINVAL(exposureBMap)
-!write(*,*) maxRExposure, minRExposure, maxGExposure, minGExposure, maxBExposure, minBExposure
- 
-!minExposure = MIN(minRExposure, minGExposure, minBExposure)
-maxExposure = MAX(maxRExposure, maxGExposure, maxBExposure)
- 
-!exposureRMap = exposureRMap - minExposure
-!exposureGMap = exposureGMap - minExposure
-!exposureBMap = exposureBMap - minExposure
-exposureRMap = (exposureRMap / REAL(maxRExposure))*intensityR
-exposureGMap = (exposureGMap / REAL(maxGExposure))*intensityG
-exposureBMap = (exposureBMap / REAL(maxBExposure))*intensityB
- 
-open ( unit = file_out_unit, file = filename, status = 'replace', &
-       form = 'formatted', access = 'sequential')
-write ( file_out_unit, '(a2)' ) 'P3'
-write ( file_out_unit, '(i5,2x,i5)' ) grid_resolution, grid_resolution
-write ( file_out_unit, '(i5)' ) INT(MAX(intensityR,intensityG,intensityB))
- 
-do ppm_i = 1, grid_resolution
-do ppm_jlo = 1, grid_resolution, 4
-    ppm_jhi = min ( ppm_jlo + 3, grid_resolution )
-    write ( file_out_unit, '(12i5)' ) &
-    ( exposureRMap(ppm_i,ppm_j), exposureGMap(ppm_i,ppm_j),exposureBMap(ppm_i,ppm_j), ppm_j = ppm_jlo,ppm_jhi )
-  end do
-end do
- 
- 
-close ( unit = file_out_unit )
- 
- 
-CONTAINS
+    integer, parameter :: grid_resolution = 512, n_max = 100
+    real, parameter :: intensity = 2048.
 
-PURE FUNCTION notInMset(c, n_max)
-  COMPLEX, INTENT(IN) :: c
-  INTEGER, INTENT(IN) :: n_max
-  INTEGER :: n
-  COMPLEX :: z
-  LOGICAL :: notInMSet
-  z = CMPLX(0,0) 
-  n = 0
-  IF(((ABS(c - CMPLX(-1,0) )) < 0.25) .OR. ((ABS( 1.0 - SQRT(1-(4*c)) ))  < 1.0 ) ) THEN
-    notInMset = .FALSE.
-  ELSE
-    DO WHILE (ABS(z) < escapeOrbit .AND. (n < n_max))
-      z = z**zpower + c
-      n = n + 1
-    END DO
- 
-    IF (n >= n_max) THEN
-      notInMset = .FALSE.
-    ELSE
-      notInMset = .TRUE.
-    END IF
-  END IF
-END FUNCTION notInMset
- 
- 
-END
- 
+    integer, dimension(grid_resolution, grid_resolution) :: &
+        exposure_map_R, exposure_map_G, exposure_map_B
 
+    integer :: max_exposure_R, max_exposure_G, max_exposure_B
+
+    real :: x, y
+    integer :: x_tmp, y_tmp, y_tmp_m
+    real, parameter :: x_min = -1.0, x_max = 2.0, y_min = -1.3, y_max = 1.3
+    real, parameter :: x_delta = x_max - x_min, x_delta_inv = 1.0/x_delta
+    real, parameter :: y_delta = y_max - y_min, y_delta_inv = 1.0/y_delta
+    complex :: z, c
+
+    integer, parameter :: batch_size = 10000000
+    integer :: i, j_low, j_high, j, iter
+
+    exposure_map_R = 0
+    exposure_map_G = 0
+    exposure_map_B = 0
+
+    !$omp parallel do default(private), shared(exposure_map_R, exposure_map_G, exposure_map_B)
+    do i = 1, batch_size
+        call random_number(x)
+        call random_number(y)
+
+        z = cmplx(0, 0)
+        c = cmplx(2.5*x - 2.0, 1.3*y)
+
+        if (not_in_M_set(c, n_max)) then
+            do iter = 1, n_max
+                z = z*z + c
+                x_tmp = int(grid_resolution * (real(z) + x_max) * x_delta_inv)
+                y_tmp = int(grid_resolution * (aimag(z) + y_max) * y_delta_inv)
+                y_tmp_m = int(grid_resolution - y_tmp)
+                if ((x_tmp > 0) .and. (x_tmp < grid_resolution) .and. &
+                    (y_tmp > 0) .and. (y_tmp < grid_resolution)) then
+                    if ((iter > 2) .and. (iter < 50)) then
+                        exposure_map_B(x_tmp, y_tmp)    = exposure_map_B(x_tmp, y_tmp) + 1
+                        exposure_map_B(x_tmp, y_tmp_m)  = exposure_map_B(x_tmp, y_tmp_m) + 1
+                    end if
+                    if ((iter > 25) .and. (iter < 75)) then
+                        exposure_map_G(x_tmp, y_tmp)    = exposure_map_G(x_tmp, y_tmp) + 1
+                        exposure_map_G(x_tmp, y_tmp_m)  = exposure_map_G(x_tmp, y_tmp_m) + 1
+                    end if
+                    if ((iter > 50) .and. (iter < 100)) then
+                        exposure_map_R(x_tmp, y_tmp)    = exposure_map_R(x_tmp, y_tmp) + 1
+                        exposure_map_R(x_tmp, y_tmp_m)  = exposure_map_R(x_tmp, y_tmp_m) + 1
+                    end if
+                end if
+            end do
+        end if
+    end do
+    !$omp end parallel do
+
+    max_exposure_R = maxval(exposure_map_R)
+    max_exposure_G = maxval(exposure_map_G)
+    max_exposure_B = maxval(exposure_map_B)
+
+    exposure_map_R = int((exposure_map_R / real(max_exposure_R))*intensity)
+    exposure_map_G = int((exposure_map_G / real(max_exposure_G))*intensity)
+    exposure_map_B = int((exposure_map_B / real(max_exposure_B))*intensity)
+
+    open(unit=33, file=filename, status='replace', form='formatted', &
+        access='sequential')
+    write(33, '(a2)')       'P3'
+    write(33, '(i5,2x,i5)') grid_resolution, grid_resolution
+    write(33, '(i5)')       int(intensity)
+
+    do i = 1, grid_resolution
+        do j_low = 1, grid_resolution, 4
+            j_high = min(j_low + 3, grid_resolution)
+            write(33, '(12i5)') &
+                (exposure_map_R(i, j), exposure_map_G(i, j), exposure_map_B(i, j), &
+                    j = j_low, j_high)
+        end do
+    end do
+
+    close(33)
+contains
+    pure function not_in_M_set(c, n_max)
+        implicit none
+        complex, intent(in) :: c
+        integer, intent(in) :: n_max
+
+        real, parameter :: escape_orbit = 2.0
+
+        integer :: n
+        complex :: z
+        logical :: not_in_M_set
+
+        z = cmplx(0,0)
+        n = 0
+        if ((abs(c - cmplx(-1,0)) < 0.25) .or. (abs(1.0 - sqrt(1.0 - 4*c)) < 1.0)) then
+            not_in_M_set = .false.
+        else
+            do while ((abs(z) < escape_orbit) .and. (n < n_max))
+                z = z*z + c
+                n = n + 1
+            end do
+            if (n >= n_max) then
+                not_in_M_set = .false.
+            else
+                not_in_M_set = .true.
+            end if
+        end if
+    end function not_in_M_set
+end program buddhabrot
