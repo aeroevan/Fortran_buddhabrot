@@ -1,5 +1,6 @@
 A buddhabrot renderer implemented in FORTRAN
 Only tested using Intel's fortran compiler (which is free for non-commercial use on linux)
+and gfortran 4.5
 
 About openmp and segfault :
 the code is optimized for use with openmp.
